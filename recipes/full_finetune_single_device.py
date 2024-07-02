@@ -491,7 +491,7 @@ class FullFinetuneRecipeSingleDevice(FTRecipeInterface):
                             ),
                             "tokens_per_second_per_gpu": num_tokens / time_per_step,
                         }
-                        if self._log_peak_memory_stats:
+                        if self._device.type in ["cuda", "xpu"] and self._log_peak_memory_stats:
                             log_dict.update(utils.get_memory_stats(device=self._device))
                         self._metric_logger.log_dict(
                             log_dict,
