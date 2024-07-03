@@ -261,9 +261,6 @@ class FullFinetuneRecipeSingleDevice(FTRecipeInterface):
         """
         Set up the model including enabling activation checkpointing.
         """
-        
-        memory_stats = utils.get_memory_stats(device=self._device)
-        
         with utils.set_default_dtype(self._dtype), self._device:
             model = config.instantiate(cfg_model)
 
