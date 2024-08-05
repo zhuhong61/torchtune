@@ -196,10 +196,18 @@ class CausalSelfAttention(nn.Module):
         q = q.reshape(bsz, seq_len, -1, self.head_dim)
         k = k.reshape(bsz, seq_len, -1, self.head_dim)
         v = v.reshape(bsz, seq_len, -1, self.head_dim)
+        
+        import torch
+        if torch.sum(torch.isnan(q)) == 0:
+            import numpy as np
+            np.savez('/home/zhuhong/shiyan/torchtune/recipes/batchdata/qkv.npz',
+                     q=q.detach().cpu(), k=k.detach().cpu(), v=v.detach().cpu(), 
+                     mask=mask.detach().cpu(), input_pos=input_pos.detach().cpu())
 
         # Apply positional embeddings
         q = self.pos_embeddings(q, input_pos=input_pos)
         k = self.pos_embeddings(k, input_pos=input_pos)
+        
 
         # [b, n_h, s, h_d]
         q = q.transpose(1, 2)
@@ -208,12 +216,17 @@ class CausalSelfAttention(nn.Module):
 
         # Update key-value cache
         if self.kv_cache is not None:
+            print('updata kv cache')
             k, v = self.kv_cache.update(input_pos, k, v)
+        
+        print(f'q.isnan, after update: {torch.sum(torch.isnan(q))}')
+        print(f'k.isnan, after update: {torch.sum(torch.isnan(k))}')
+        print(f'v.isnan, after update: {torch.sum(torch.isnan(v))}')
 
         # shape: [b, 1, s, s]
         if mask is not None:
             mask = mask[:, None, :, :]
-
+        print(f'q.dtype: {q.dtype}')
         # Flash attention from https://pytorch.org/blog/accelerating-large-language-models/
         output = nn.functional.scaled_dot_product_attention(
             q,
@@ -223,6 +236,9 @@ class CausalSelfAttention(nn.Module):
             dropout_p=self.attn_dropout,
             is_causal=self.kv_cache is None and mask is None,
         )
+        
+        print(f'output.isnan: {torch.sum(torch.isnan(output))}')
+        print(f'output: {output[0]}')
 
         # reshape the output to be the same shape as the input
         output = output.transpose(1, 2).contiguous().view(bsz, seq_len, -1)

@@ -42,6 +42,12 @@ import oneccl_bindings_for_pytorch
 
 log = utils.get_logger("DEBUG")
 
+def print_memory(text, rank):
+    if rank == 0:
+        print(f'===alloc memory {text}: {torch.xpu.memory_allocated("xpu:0")/(1024**3):.4f}GB')
+        print(f'===reserve memory {text}: {torch.xpu.memory_reserved("xpu:0")/(1024**3):.4f}GB')
+    
+
 
 class LoRAFinetuneRecipeDistributed(FTRecipeInterface):
     """
@@ -566,6 +572,7 @@ class LoRAFinetuneRecipeDistributed(FTRecipeInterface):
         num_tokens = 0
 
         # self.epochs_run should be non-zero when we're resuming from a checkpoint
+        print_memory('before training', rank)
         for curr_epoch in range(self.epochs_run, self.total_epochs):
 
             # Update the sampler to ensure data is correctly shuffled across epochs
@@ -580,6 +587,9 @@ class LoRAFinetuneRecipeDistributed(FTRecipeInterface):
                     == self.max_steps_per_epoch
                 ):
                     break
+                
+                # if idx>10:
+                #     break
 
                 # Both are shape [b, s]
                 tokens, labels = batch["tokens"], batch["labels"]
@@ -596,7 +606,10 @@ class LoRAFinetuneRecipeDistributed(FTRecipeInterface):
                     input_pos.to(self._device) if input_pos is not None else None
                 )
 
+                print_memory('before fwd', rank)
                 logits = self._model(tokens, mask=mask, input_pos=input_pos)
+                print_memory('after fwd', rank)
+                
                 # Shift so that tokens < n predict n
                 logits = logits[..., :-1, :].contiguous()
                 labels = labels[..., 1:].contiguous()
@@ -608,11 +621,16 @@ class LoRAFinetuneRecipeDistributed(FTRecipeInterface):
 
                 loss = loss / self._gradient_accumulation_steps
                 running_loss += loss
+                
+                print_memory('before bwd', rank)
                 loss.backward()
+                print_memory('after bwd', rank)
 
                 # Step with optimizer
                 if (idx + 1) % self._gradient_accumulation_steps == 0:
+                    print_memory('before optim', rank)
                     self._optimizer.step()
+                    print_memory('after optim', rank)
                     self._optimizer.zero_grad(set_to_none=True)
                     self._lr_scheduler.step()
 
@@ -678,10 +696,15 @@ def recipe_main(cfg: DictConfig) -> None:
         init_process_group(backend="gloo" if cfg.device == "cpu" else "nccl")
 
     config.log_config(recipe_name="LoRAFinetuneRecipeDistributed", cfg=cfg)
-
+    
     recipe = LoRAFinetuneRecipeDistributed(cfg=cfg)
+    
+    _, rank = utils.get_world_size_and_rank()
+    print_memory('before setup', rank)
     recipe.setup(cfg=cfg)
+    print_memory('after setup', rank)
     recipe.train()
+    print_memory('after train', rank)
     recipe.cleanup()
 
 

@@ -1,6 +1,6 @@
 # Single GPU 
 # Full 8b
-# export ZE_AFFINITY_MASK=4 # enable when single_device
+export ZE_AFFINITY_MASK=4 # enable when single_device
 
 Run_llama3-8b_single_device_full() {
     tune run full_finetune_single_device \
@@ -8,7 +8,9 @@ Run_llama3-8b_single_device_full() {
     batch_size=4 \
     gradient_accumulation_steps=1 \
     dataset.max_seq_len=2048 \
+    dataset.packed=True \
     log_peak_memory_stats=True \
+    enable_activation_checkpointing=True \
     device=xpu \
     optimizer._component_=torch.optim.AdamW \
     checkpointer.checkpoint_dir=/workspace1/huggingface/hub/meta-llama/Meta-Llama-3-8B-Instruct/original \
@@ -42,13 +44,15 @@ Run_llama3-8b_single_device_lora() {
     batch_size=4 \
     gradient_accumulation_steps=1 \
     dataset.max_seq_len=2048 \
+    dataset.packed=True \
     log_peak_memory_stats=True \
+    enable_activation_checkpointing=True \
     device=xpu \
     checkpointer.checkpoint_dir=/workspace1/huggingface/hub/meta-llama/Meta-Llama-3-8B-Instruct/original \
     tokenizer.path=/workspace1/huggingface/hub/meta-llama/Meta-Llama-3-8B-Instruct/original/tokenizer.model \
     checkpointer.output_dir=/workspace1/huggingface/hub \
     output_dir=/home/zhuhong/shiyan/torchtune/recipes/alpaca-llama3-finetune \
-    2>&1 | tee alpaca-llama3-finetune/llama3-8b_single_device_lora_bs_4_seqlen_2048.log
+    2>&1 | tee alpaca-llama3-finetune/llama3-8b_single_device_lora_bs_4_seqlen_2048_test_delogits.log
 }
 
 
@@ -68,8 +72,10 @@ Run_llama3-8b_distributed_full() {
     --config llama3/8B_full \
     batch_size=4 \
     dataset.max_seq_len=2048 \
+    dataset.packed=True \
     gradient_accumulation_steps=1 \
     log_peak_memory_stats=True \
+    enable_activation_checkpointing=True \
     device=xpu \
     checkpointer.checkpoint_dir=/workspace1/huggingface/hub/meta-llama/Meta-Llama-3-8B-Instruct/original \
     tokenizer.path=/workspace1/huggingface/hub/meta-llama/Meta-Llama-3-8B-Instruct/original/tokenizer.model \
@@ -81,28 +87,30 @@ Run_llama3-8b_distributed_full() {
 
 # distributed lora
 Run_llama3-8b_distributed_lora() {
-    tune run --nproc_per_node 2 lora_finetune_distributed \
+    tune run --nproc_per_node 4 lora_finetune_distributed \
     --config llama3/8B_lora \
     batch_size=4 \
     dataset.max_seq_len=2048 \
+    dataset.packed=True \
     gradient_accumulation_steps=1 \
     log_peak_memory_stats=True \
+    enable_activation_checkpointing=True \
     device=xpu \
     checkpointer.checkpoint_dir=/workspace1/huggingface/hub/meta-llama/Meta-Llama-3-8B-Instruct/original \
     tokenizer.path=/workspace1/huggingface/hub/meta-llama/Meta-Llama-3-8B-Instruct/original/tokenizer.model \
     checkpointer.output_dir=/workspace1/huggingface/hub \
     output_dir=/home/zhuhong/shiyan/torchtune/recipes/alpaca-llama3-finetune \
-    2>&1 | tee alpaca-llama3-finetune/llama3-8b_distributed_lora_bs_4_seqlen_2048_node_2.log
+    2>&1 | tee alpaca-llama3-finetune/llama3-8b_distributed_lora_bs_4_seqlen_2048_node_4.log
 }
 
 
 main() {
 #   Run_llama3-8b_single_device_full
 #   Run_llama3-8b_single_device_full_pagedadamw
-#   Run_llama3-8b_single_device_lora
+  Run_llama3-8b_single_device_lora
   # Run_llama3-8b_single_device_qlora
 #   Run_llama3-8b_distributed_full
-  Run_llama3-8b_distributed_lora
+#   Run_llama3-8b_distributed_lora
 }
 
 main

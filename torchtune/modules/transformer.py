@@ -233,12 +233,15 @@ class TransformerDecoder(nn.Module):
                 )
             # shape: [1, input_pos_len, m_s]
             # in most cases input_pos_len should be 1
-            mask = self.causal_mask[None, input_pos]
-
-        for layer in self.layers:
+            mask = self.causal_mask[None, input_pos]    
+        
+        for idx, layer in enumerate(self.layers):
             # shape: [b, s, d]
             h = layer(h, mask=mask, input_pos=input_pos)
-
+            if idx == 0:
+                print(f'h: {h[0]}')
+                print(torch.sum(torch.isnan(h[0])))
+        
         # shape: [b, s, d]
         h = self.norm(h)
 

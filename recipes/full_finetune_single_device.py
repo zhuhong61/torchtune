@@ -24,9 +24,15 @@ from torchtune.recipe_interfaces import FTRecipeInterface
 
 from tqdm import tqdm
 import intel_extension_for_pytorch
+import oneccl_bindings_for_pytorch
 
 
 log = utils.get_logger("DEBUG")
+
+def print_memory(text):
+    print(f'===alloc memory {text}: {torch.xpu.memory_allocated("xpu:0")/(1024**3):.4f}GB')
+    print(f'===reserve memory {text}: {torch.xpu.memory_reserved("xpu:0")/(1024**3):.4f}GB')
+    
 
 
 class FullFinetuneRecipeSingleDevice(FTRecipeInterface):
@@ -421,6 +427,7 @@ class FullFinetuneRecipeSingleDevice(FTRecipeInterface):
         running_loss = 0
         num_tokens = 0
 
+        print_memory('before training')
         # self.epochs_run should be non-zero when we're resuming from a checkpoint
         for curr_epoch in range(self.epochs_run, self.total_epochs):
             # Update the sampler to ensure data is correctly shuffled across epochs
@@ -450,8 +457,10 @@ class FullFinetuneRecipeSingleDevice(FTRecipeInterface):
                 input_pos = (
                     input_pos.to(self._device) if input_pos is not None else None
                 )
-
+                
+                print_memory('before fwd')
                 logits = self._model(tokens, mask=mask, input_pos=input_pos)
+                print_memory('after fwd')
                 # Shift so that tokens < n predict n
                 logits = logits[..., :-1, :].contiguous()
                 labels = labels[..., 1:].contiguous()
@@ -461,12 +470,16 @@ class FullFinetuneRecipeSingleDevice(FTRecipeInterface):
 
                 loss = loss / self._gradient_accumulation_steps
                 running_loss += loss
+                print_memory('before bwd')
                 loss.backward()
+                print_memory('after bwd')
 
                 # Step with optimizer
                 if (idx + 1) % self._gradient_accumulation_steps == 0:
                     if not self._optimizer_in_bwd:
+                        print_memory('before optim')
                         self._optimizer.step()
+                        print_memory('after optim')
                         self._optimizer.zero_grad(set_to_none=True)
 
                     self.global_step += 1
@@ -521,10 +534,12 @@ def recipe_main(cfg: DictConfig) -> None:
     """
     config.log_config(recipe_name="FullFinetuneRecipeSingleDevice", cfg=cfg)
     recipe = FullFinetuneRecipeSingleDevice(cfg=cfg)
+    print_memory('before setup')
     recipe.setup(cfg=cfg)
+    print_memory('after setup')
     recipe.train()
+    print_memory('after train')
     recipe.cleanup()
-
 
 if __name__ == "__main__":
     sys.exit(recipe_main())

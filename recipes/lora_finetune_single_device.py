@@ -30,9 +30,15 @@ from torchtune.modules.peft.peft_utils import (
 from torchtune.recipe_interfaces import FTRecipeInterface
 from tqdm import tqdm
 import intel_extension_for_pytorch
+import oneccl_bindings_for_pytorch
+
 
 log = utils.get_logger("DEBUG")
 
+def print_memory(text):
+    print(f'===alloc memory {text}: {torch.xpu.memory_allocated("xpu:0")/(1024**3):.4f}GB')
+    print(f'===reserve memory {text}: {torch.xpu.memory_reserved("xpu:0")/(1024**3):.4f}GB')
+  
 
 class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
     """
@@ -241,7 +247,8 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
             shuffle=cfg.shuffle,
             batch_size=cfg.batch_size,
         )
-
+        
+        
         # Finally update the recipe state which can only be correctly set after all of the
         # other components have been initialized and updated.
 
@@ -378,6 +385,9 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
             ds = config.instantiate(cfg_dataset, tokenizer=self._tokenizer)
             packed = cfg_dataset.get("packed", False)
 
+        import numpy as np
+        np.savez('batchdata/dataset.npz', ds)
+        
         sampler = DistributedSampler(
             ds,
             num_replicas=1,
@@ -476,6 +486,7 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         running_loss = 0
         num_tokens = 0
 
+        print_memory('before training')
         # self.epochs_run should be non-zero when we're resuming from a checkpoint
         for curr_epoch in range(self.epochs_run, self.total_epochs):
             # Update the sampler to ensure data is correctly shuffled across epochs
@@ -492,6 +503,9 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
                         == self.max_steps_per_epoch
                     ):
                         break
+                    
+                    if idx>10:
+                        break
 
                     if self._profiler_enabled:
                         self._profiler.step()
@@ -502,6 +516,13 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
                     # exist. Currently, only sample packing in PackedDataset returns these
                     mask = batch.get("mask", None)  # shape [b, s, s]
                     input_pos = batch.get("input_pos", None)  # shape [b, s]
+                    
+                    if idx ==1:
+                        import numpy as np
+                        output_dir = os.path.join('batchdata', 
+                                                  'batch_packed.npz' if mask is not None else 'batch.npz')
+                        np.savez(output_dir, tokens=tokens, labels=labels, mask=mask, input_pos=input_pos)
+                        print(tokens)
 
                     tokens = tokens.to(self._device)
                     num_tokens += tokens.numel()
@@ -511,20 +532,29 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
                         input_pos.to(self._device) if input_pos is not None else None
                     )
 
+                    print_memory('before fwd')
                     logits = self._model(tokens, mask=mask, input_pos=input_pos)
+                    print_memory('after fwd')
                     # Shift so that tokens < n predict n
                     logits = logits[..., :-1, :].contiguous()
                     labels = labels[..., 1:].contiguous()
                     logits = logits.transpose(1, 2)
+                    print_memory(f'after logits.tranpose, {logits.shape}')
                     # Compute loss
                     loss = self._loss_fn(logits, labels)
+                    del logits
+                    
                     loss = loss / self._gradient_accumulation_steps
                     running_loss += loss
+                    print_memory('before bwd')
                     loss.backward()
+                    print_memory('after bwd')
 
                     # Step with optimizer
                     if (idx + 1) % self._gradient_accumulation_steps == 0:
+                        print_memory('before optim')
                         self._optimizer.step()
+                        print_memory('after optim')
                         self._optimizer.zero_grad(set_to_none=True)
                         self._lr_scheduler.step()
                         # Update the number of steps when the weights are updated
@@ -576,8 +606,11 @@ def recipe_main(cfg: DictConfig) -> None:
     """
     config.log_config(recipe_name="LoRAFinetuneRecipeSingleDevice", cfg=cfg)
     recipe = LoRAFinetuneRecipeSingleDevice(cfg=cfg)
+    print_memory('before setup')
     recipe.setup(cfg=cfg)
+    print_memory('after setup')
     recipe.train()
+    print_memory('after train')
     recipe.cleanup()
 
 
