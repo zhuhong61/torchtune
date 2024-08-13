@@ -107,10 +107,10 @@ Run_llama2-7b_distributed_lora() {
 main() {
 #   Run_llama2-7b_single_device_full
   # Run_llama2-7b_single_device_full_pagedadamw
-#   Run_llama2-7b_single_device_lora
+  Run_llama2-7b_single_device_lora
   # Run_llama2-7b_single_device_qlora
-#   Run_llama2-7b_distributed_full
-  Run_llama2-7b_distributed_lora
+  # Run_llama2-7b_distributed_full
+  # Run_llama2-7b_distributed_lora
 }
 
 main

@@ -3,6 +3,12 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+import torch
+if torch.xpu.is_available():
+    print('torch.xpu.is_availabel()')
+    import intel_extension_for_pytorch
+    import oneccl_bindings_for_pytorch
+
 
 from ._checkpointing import (  # noqa
     FullModelHFCheckpointer,
@@ -63,6 +69,7 @@ __all__ = [
     "FSDPPolicyType",
     "log_memory_stats",
     "get_device",
+    "get_device_handle",
     "get_dtype",
     "get_logger",
     "get_world_size_and_rank",
